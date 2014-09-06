@@ -1,0 +1,6 @@
+D:\Development\Contrib\gam-sept\gam-sept\bin\gam-sept.dll.config
+D:\Development\Contrib\gam-sept\gam-sept\bin\gam-sept.dll
+D:\Development\Contrib\gam-sept\gam-sept\bin\gam-sept.pdb
+D:\Development\Contrib\gam-sept\gam-sept\obj\Debug\gam-sept.csprojResolveAssemblyReference.cache
+D:\Development\Contrib\gam-sept\gam-sept\obj\Debug\gam-sept.dll
+D:\Development\Contrib\gam-sept\gam-sept\obj\Debug\gam-sept.pdb
