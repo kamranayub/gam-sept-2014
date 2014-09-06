@@ -24,41 +24,62 @@ var TileFactory = (function () {
     return TileFactory;
 })();
 
-var Tile = (function () {
+var Tile = (function (_super) {
+    __extends(Tile, _super);
     function Tile(tileId) {
+        _super.call(this, 0, 0, Tile.width, Tile.width);
         this.tileId = tileId;
+
+        this.anchor.setTo(0, 0);
+        this.color = ex.Color.fromHex("#dddddd");
     }
+    Tile.prototype.clone = function () {
+        return TileFactory.tiles[this.tileId]();
+    };
+    Tile.width = 80;
     return Tile;
-})();
+})(ex.Actor);
 
 var TileA = (function (_super) {
     __extends(TileA, _super);
-    function TileA() {
-        _super.apply(this, arguments);
+    function TileA(tileId) {
+        _super.call(this, tileId);
+        this.tileId = tileId;
+
+        this.color = ex.Color.fromHex("#b9392f");
     }
     return TileA;
 })(Tile);
 
 var TileB = (function (_super) {
     __extends(TileB, _super);
-    function TileB() {
-        _super.apply(this, arguments);
+    function TileB(tileId) {
+        _super.call(this, tileId);
+        this.tileId = tileId;
+
+        this.color = ex.Color.fromHex("#1f91ad");
     }
     return TileB;
 })(Tile);
 
 var TileC = (function (_super) {
     __extends(TileC, _super);
-    function TileC() {
-        _super.apply(this, arguments);
+    function TileC(tileId) {
+        _super.call(this, tileId);
+        this.tileId = tileId;
+
+        this.color = ex.Color.fromHex("#5fa725");
     }
     return TileC;
 })(Tile);
 
 var TileD = (function (_super) {
     __extends(TileD, _super);
-    function TileD() {
-        _super.apply(this, arguments);
+    function TileD(tileId) {
+        _super.call(this, tileId);
+        this.tileId = tileId;
+
+        this.color = ex.Color.fromHex("#752cc0");
     }
     return TileD;
 })(Tile);
@@ -122,11 +143,11 @@ var Grid = (function (_super) {
     };
 
     Grid.prototype.fill = function () {
-        var i, j, s, availableSet;
+        var i, j, s, availableSet, randTileId, randTile, cell;
 
         for (i = 0; i < Grid.size; i++) {
             for (j = 0; j < Grid.size; j++) {
-                if (this.getCell(j, i).isEmpty()) {
+                if ((cell = this.getCell(j, i)).isEmpty()) {
                     // full set available
                     availableSet = [];
 
@@ -142,10 +163,12 @@ var Grid = (function (_super) {
                         }
                     }
 
-                    var randTileId = availableSet[Math.floor(Math.random() * availableSet.length)];
+                    randTileId = availableSet[Math.floor(Math.random() * availableSet.length)];
+                    randTile = TileFactory.tiles[randTileId]();
 
-                    this.getCell(j, i).setTile(TileFactory.tiles[randTileId]());
-                    ex.Logger.getInstance().debug("[fill]", "x", j, "y", i, "tile", randTileId);
+                    cell.fillTile(randTile, Grid.tileDropAnimationSpeedFast);
+
+                    ex.Logger.getInstance().debug("[fill]", "x", j, "y", i, "tile", randTileId, randTile);
                 }
             }
         }
@@ -169,14 +192,25 @@ var Grid = (function (_super) {
     Grid.prototype.draw = function (ctx, delta) {
         _super.prototype.draw.call(this, ctx, delta);
 
-        for (var i = 0; i < Grid.size; i++) {
-            for (var j = 0; j < Grid.size; j++) {
+        var i, j;
+
+        for (i = 0; i < Grid.size; i++) {
+            for (j = 0; j < Grid.size; j++) {
                 this.getCell(j, i).draw(ctx, delta);
+            }
+        }
+
+        for (i = 0; i < Grid.size; i++) {
+            for (j = 0; j < Grid.size; j++) {
+                if (!this.getCell(j, i).isEmpty()) {
+                    this.getCell(j, i).getTile().draw(ctx, delta);
+                }
             }
         }
     };
 
     Grid.prototype.swap = function (x1, y1, x2, y2) {
+        var _this = this;
         var cell1 = this.getCell(x1, y1);
         var cell2 = this.getCell(x2, y2);
 
@@ -187,42 +221,40 @@ var Grid = (function (_super) {
         if (cell1.isNeighboring(cell2)) {
             var previewBoard = this.clone();
 
-            previewBoard.getCell(cell1.col, cell1.row).setTile(cell2.getTile());
-            previewBoard.getCell(cell2.col, cell2.row).setTile(cell1.getTile());
+            previewBoard.getCell(cell1.col, cell1.row).setTile(cell2.getTile().clone());
+            previewBoard.getCell(cell2.col, cell2.row).setTile(cell1.getTile().clone());
 
             var previewMatches = Grid.findAllMatches(previewBoard);
 
             if (previewMatches.length) {
                 ex.Logger.getInstance().info("Begin swap");
 
-                // commit changes
-                var temp = cell1.getTile();
-                this.getCell(cell1.col, cell1.row).setTile(cell2.getTile());
-                this.getCell(cell2.col, cell2.row).setTile(temp);
+                // swap
+                cell1.swapTile(cell2).then(function () {
+                    // resolve matches
+                    var totalMatches = 0;
+                    var matchLength;
+                    var chainLength = -1;
 
-                // resolve matches
-                var totalMatches = 0;
-                var matchLength;
-                var chainLength = -1;
+                    while ((matchLength = _this.resolveMatches()) > 0) {
+                        // total matches
+                        totalMatches += matchLength;
 
-                while ((matchLength = this.resolveMatches()) > 0) {
-                    // total matches
-                    totalMatches += matchLength;
+                        // chain
+                        chainLength++;
 
-                    // chain
-                    chainLength++;
+                        ex.Logger.getInstance().info("Match chain", chainLength);
 
-                    ex.Logger.getInstance().info("Match chain", chainLength);
+                        // shift all empty cells down
+                        // start from bottom row and move up
+                        _this.shiftColumns();
 
-                    // shift all empty cells down
-                    // start from bottom row and move up
-                    this.shiftColumns();
+                        // fill in empty spots
+                        _this.fill();
+                    }
 
-                    // fill in empty spots
-                    this.fill();
-                }
-
-                ex.Logger.getInstance().info("Finished swap with", totalMatches, "total matches and a", chainLength, "chain length");
+                    ex.Logger.getInstance().info("Finished swap with", totalMatches, "total matches and a", chainLength, "chain length");
+                });
             }
         }
     };
@@ -348,15 +380,23 @@ var Grid = (function (_super) {
     };
 
     Grid.prototype.clone = function () {
-        var newGrid = new Grid();
+        var newGrid = new Grid(), tile;
 
         for (var i = 0; i < newGrid.cells.length; i++) {
-            newGrid.cells[i].setTile(this.cells[i].getTile());
+            tile = this.cells[i].getTile();
+
+            if (tile) {
+                newGrid.cells[i].setTile(tile.clone());
+            }
         }
 
         return newGrid;
     };
     Grid.size = 5;
+    Grid.tileDropAnimationSpeed = 150;
+    Grid.tileDropAnimationSpeedFast = 500;
+    Grid.tileDropDelaySpeed = 50;
+    Grid.tileDisappearSpeed = 100;
     return Grid;
 })(ex.Actor);
 
@@ -372,22 +412,22 @@ var GridCell = (function (_super) {
         this.anchor.setTo(0, 0);
         this.x = col * GridCell.width + (col * GridCell.margin);
         this.y = row * GridCell.width + (row * GridCell.margin);
-
-        this.label = new ex.Label(null, 0, 36, "36px Arial");
-        this.addChild(this.label);
     }
     GridCell.prototype.update = function (engine, delta) {
         _super.prototype.update.call(this, engine, delta);
 
-        if (this.selected) {
-            this.color = ex.Color.fromHex("#222222");
-        } else {
-            this.color = ex.Color.fromHex("#dddddd");
+        if (this.tile !== null) {
+            this.tile.update(engine, delta);
         }
     };
 
     GridCell.prototype.draw = function (ctx, delta) {
         _super.prototype.draw.call(this, ctx, delta);
+
+        if (this.selected) {
+            ctx.strokeStyle = ex.Color.fromHex("#ffffff").toString();
+            ctx.strokeRect(this.x, this.y, this.getWidth(), this.getHeight());
+        }
     };
 
     GridCell.prototype.isEmpty = function () {
@@ -399,12 +439,41 @@ var GridCell = (function (_super) {
     };
 
     GridCell.prototype.setTile = function (tile) {
-        this.tile = tile;
-        if (this.tile !== null) {
-            this.label.text = this.tile.tileId.toString();
-        } else {
-            this.label.text = '';
+        if (tile) {
+            tile.x = this.x;
+            tile.y = this.y;
         }
+        this.tile = tile;
+    };
+
+    GridCell.prototype.fillTile = function (tile, speed) {
+        if (tile) {
+            tile.x = this.x;
+            tile.y = -GridCell.width * (Grid.size - this.row);
+            tile.moveTo(this.x, this.y, speed);
+        }
+        this.tile = tile;
+    };
+
+    GridCell.prototype.swapTile = function (other) {
+        var _this = this;
+        var otherTile = other.getTile();
+        var thisTile = this.getTile();
+        var p = new ex.Promise();
+        var q = [0, 0];
+        var c = function () {
+            q.shift();
+
+            if (q.length === 0) {
+                other.setTile(thisTile);
+                _this.setTile(otherTile);
+                p.resolve(true);
+            }
+        };
+        otherTile.moveTo(this.x, this.y, 150).callMethod(c);
+        thisTile.moveTo(other.x, other.y, 150).callMethod(c);
+
+        return p;
     };
 
     GridCell.prototype.getTileId = function () {
