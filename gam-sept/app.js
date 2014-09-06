@@ -69,12 +69,37 @@ var Grid = (function (_super) {
 
         this.anchor.setTo(0, 0);
 
+        this.selectedCells = [];
         this.cells = new Array(Grid.size * Grid.size);
 
         for (var i = 0; i < this.cells.length; i++) {
             this.cells[i] = new GridCell(i % Grid.size, Math.floor(i / Grid.size));
         }
     }
+    Grid.prototype.onInitialize = function (engine) {
+        var _this = this;
+        _super.prototype.onInitialize.call(this, engine);
+
+        this.on("click", function (e) {
+            var cell = _this.getCellByPos(e.x, e.y);
+
+            if (cell !== null) {
+                ex.Logger.getInstance().info("[grid] cell click", e.x, e.y, cell.col, cell.row);
+
+                // select cell
+                _this.selectedCells.push(cell);
+
+                if (_this.selectedCells.length === 2) {
+                    // perform swap
+                    _this.swap(_this.selectedCells[0].col, _this.selectedCells[0].row, _this.selectedCells[1].col, _this.selectedCells[1].row);
+
+                    // reset selection
+                    _this.selectedCells.length = 0;
+                }
+            }
+        });
+    };
+
     Grid.prototype.getCell = function (x, y) {
         if (x < 0 || x > Grid.size)
             return null;
@@ -82,6 +107,18 @@ var Grid = (function (_super) {
             return null;
 
         return this.cells[(x + y * Grid.size)];
+    };
+
+    Grid.prototype.getCellByPos = function (x, y) {
+        for (var i = 0; i < this.cells.length; i++) {
+            var b = this.cells[i].getBounds();
+
+            if (b.contains(new ex.Point(x, y))) {
+                return this.cells[i];
+            }
+        }
+
+        return null;
     };
 
     Grid.prototype.fill = function () {
@@ -114,6 +151,21 @@ var Grid = (function (_super) {
         }
     };
 
+    Grid.prototype.update = function (engine, delta) {
+        var _this = this;
+        _super.prototype.update.call(this, engine, delta);
+
+        this.cells.forEach(function (c) {
+            if (_this.selectedCells.indexOf(c) > -1) {
+                c.selected = true;
+            } else {
+                c.selected = false;
+            }
+
+            c.update(engine, delta);
+        });
+    };
+
     Grid.prototype.draw = function (ctx, delta) {
         _super.prototype.draw.call(this, ctx, delta);
 
@@ -141,10 +193,72 @@ var Grid = (function (_super) {
             var previewMatches = Grid.findAllMatches(previewBoard);
 
             if (previewMatches.length) {
+                ex.Logger.getInstance().info("Begin swap");
+
                 // commit changes
                 var temp = cell1.getTile();
                 this.getCell(cell1.col, cell1.row).setTile(cell2.getTile());
                 this.getCell(cell2.col, cell2.row).setTile(temp);
+
+                // resolve matches
+                var totalMatches = 0;
+                var matchLength;
+                var chainLength = -1;
+
+                while ((matchLength = this.resolveMatches()) > 0) {
+                    // total matches
+                    totalMatches += matchLength;
+
+                    // chain
+                    chainLength++;
+
+                    ex.Logger.getInstance().info("Match chain", chainLength);
+
+                    // shift all empty cells down
+                    // start from bottom row and move up
+                    this.shiftColumns();
+
+                    // fill in empty spots
+                    this.fill();
+                }
+
+                ex.Logger.getInstance().info("Finished swap with", totalMatches, "total matches and a", chainLength, "chain length");
+            }
+        }
+    };
+
+    Grid.prototype.resolveMatches = function () {
+        var _this = this;
+        var matches = Grid.findAllMatches(this);
+
+        matches.forEach(function (match) {
+            ex.Logger.getInstance().info("Match sequence resolved", match);
+
+            match.forEach(function (cell) {
+                _this.getCell(cell.col, cell.row).setTile(null);
+            });
+        });
+
+        return matches.length;
+    };
+
+    Grid.prototype.shiftColumns = function () {
+        var row, col, peekRow;
+        for (row = Grid.size - 1; row > 0; row--) {
+            for (col = 0; col < Grid.size; col++) {
+                if (this.getCell(col, row).isEmpty()) {
+                    // shift the first tile above this row
+                    peekRow = row - 1;
+                    while (peekRow > -1) {
+                        if (!this.getCell(col, peekRow).isEmpty()) {
+                            this.getCell(col, row).setTile(this.getCell(col, peekRow).getTile());
+                            this.getCell(col, peekRow).setTile(null);
+                            peekRow = -1;
+                        } else {
+                            peekRow--;
+                        }
+                    }
+                }
             }
         }
     };
@@ -253,6 +367,7 @@ var GridCell = (function (_super) {
         this.col = col;
         this.row = row;
         this.tile = null;
+        this.selected = false;
 
         this.anchor.setTo(0, 0);
         this.x = col * GridCell.width + (col * GridCell.margin);
@@ -263,6 +378,16 @@ var GridCell = (function (_super) {
     }
     GridCell.prototype.update = function (engine, delta) {
         _super.prototype.update.call(this, engine, delta);
+
+        if (this.selected) {
+            this.color = ex.Color.fromHex("#222222");
+        } else {
+            this.color = ex.Color.fromHex("#dddddd");
+        }
+    };
+
+    GridCell.prototype.draw = function (ctx, delta) {
+        _super.prototype.draw.call(this, ctx, delta);
     };
 
     GridCell.prototype.isEmpty = function () {
@@ -277,6 +402,8 @@ var GridCell = (function (_super) {
         this.tile = tile;
         if (this.tile !== null) {
             this.label.text = this.tile.tileId.toString();
+        } else {
+            this.label.text = '';
         }
     };
 
