@@ -1,276 +1,312 @@
-﻿var config = {
-   size: 5,
-   types: ['X', 'Y', 'A', 'B']
+﻿var __extends = this.__extends || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    __.prototype = b.prototype;
+    d.prototype = new __();
 };
-var $board = $("#board"), board;
+var TileFactory = (function () {
+    function TileFactory() {
+    }
+    TileFactory.tiles = [
+        function () {
+            return new TileA(0);
+        },
+        function () {
+            return new TileB(1);
+        },
+        function () {
+            return new TileC(2);
+        },
+        function () {
+            return new TileD(3);
+        }
+    ];
+    return TileFactory;
+})();
 
-var game = {
-   fill: function () {
-      var i, j, s, availableSet;
+var Tile = (function () {
+    function Tile(tileId) {
+        this.tileId = tileId;
+    }
+    return Tile;
+})();
 
-      for (i = 0; i < board.length; i++) {
-         for (j = 0; j < board[i].length; j++) {
-            if (board[i][j] === '') {
+var TileA = (function (_super) {
+    __extends(TileA, _super);
+    function TileA() {
+        _super.apply(this, arguments);
+    }
+    return TileA;
+})(Tile);
 
-               // full set available
-               availableSet = [];
+var TileB = (function (_super) {
+    __extends(TileB, _super);
+    function TileB() {
+        _super.apply(this, arguments);
+    }
+    return TileB;
+})(Tile);
 
-               // foreach in set
-               for (s = 0; s < config.types.length; s++) {
+var TileC = (function (_super) {
+    __extends(TileC, _super);
+    function TileC() {
+        _super.apply(this, arguments);
+    }
+    return TileC;
+})(Tile);
 
-                  // if the given tile will not result in a match, add to
-                  // potential set
-                  if (!game.findMatches(config.types[s], j, i).length) {
-                     availableSet.push(config.types[s]);
-                  }
-               }
+var TileD = (function (_super) {
+    __extends(TileD, _super);
+    function TileD() {
+        _super.apply(this, arguments);
+    }
+    return TileD;
+})(Tile);
+var Grid = (function (_super) {
+    __extends(Grid, _super);
+    function Grid() {
+        _super.call(this, 0, 0, 500, 500);
 
-               board[i][j] = availableSet[Math.floor(Math.random() * availableSet.length)];
+        this.anchor.setTo(0, 0);
+
+        this.cells = new Array(Grid.size * Grid.size);
+
+        for (var i = 0; i < this.cells.length; i++) {
+            this.cells[i] = new GridCell(i % Grid.size, Math.floor(i / Grid.size));
+        }
+    }
+    Grid.prototype.getCell = function (x, y) {
+        if (x < 0 || x > Grid.size)
+            return null;
+        if (y < 0 || y > Grid.size)
+            return null;
+
+        return this.cells[(x + y * Grid.size)];
+    };
+
+    Grid.prototype.fill = function () {
+        var i, j, s, availableSet;
+
+        for (i = 0; i < Grid.size; i++) {
+            for (j = 0; j < Grid.size; j++) {
+                if (this.getCell(j, i).isEmpty()) {
+                    // full set available
+                    availableSet = [];
+
+                    for (s = 0; s < TileFactory.tiles.length; s++) {
+                        // if the given tile will not result in a match, add to
+                        // potential set
+                        var previewGrid = this.clone();
+
+                        previewGrid.getCell(j, i).setTile(TileFactory.tiles[s]());
+
+                        if (!Grid.findMatches(j, i, previewGrid).length) {
+                            availableSet.push(s);
+                        }
+                    }
+
+                    var randTileId = availableSet[Math.floor(Math.random() * availableSet.length)];
+
+                    this.getCell(j, i).setTile(TileFactory.tiles[randTileId]());
+                    ex.Logger.getInstance().debug("[fill]", "x", j, "y", i, "tile", randTileId);
+                }
             }
-         }
-      }
-   },
+        }
+    };
 
-   findMatches: function (tile, tx, ty) {
-      var matches = [], i;
+    Grid.prototype.draw = function (ctx, delta) {
+        _super.prototype.draw.call(this, ctx, delta);
 
-      // explore horizontal/vertical matches
-      var e = game.peek(tx, ty, config.size, 1, 0); // e
-      var w = game.peek(tx, ty, config.size, -1, 0); // w                  
-      var n = game.peek(tx, ty, config.size, 0, -1); // n
-      var s = game.peek(tx, ty, config.size, 0, 1); // s
+        for (var i = 0; i < Grid.size; i++) {
+            for (var j = 0; j < Grid.size; j++) {
+                this.getCell(j, i).draw(ctx, delta);
+            }
+        }
+    };
 
-      var horizontal = game.getSequences(tile, tx, ty, w, e);
-      var vertical = game.getSequences(tile, tx, ty, n, s);
+    Grid.prototype.swap = function (x1, y1, x2, y2) {
+        var cell1 = this.getCell(x1, y1);
+        var cell2 = this.getCell(x2, y2);
 
-      for (i = 0; i < horizontal.length; i++) {
-         matches.push(horizontal[i]);
-      }
-      for (i = 0; i < vertical.length; i++) {
-         matches.push(vertical[i]);
-      }
+        if (cell1 === null || cell2 === null) {
+            return;
+        }
 
-      return matches;
-   },
+        if (cell1.isNeighboring(cell2)) {
+            var previewBoard = this.clone();
 
-   getSequences: function (tile, cx, cy, left, right) {
-      // horizontal sequence
-      var results = [], match, sequence = [];
+            previewBoard.getCell(cell1.col, cell1.row).setTile(cell2.getTile());
+            previewBoard.getCell(cell2.col, cell2.row).setTile(cell1.getTile());
 
-      for (i = left.length - 1; i >= 0; i--) {
-         sequence.push(left[i]);
-      }
-      sequence.push({ t: tile, x: cx, y: cy });
-      for (i = 0; i < right.length; i++) {
-         sequence.push(right[i]);
-      }
+            var previewMatches = Grid.findAllMatches(previewBoard);
 
-      // longest match sequence
-      match = [];
-      for (i = 0; i < sequence.length; i++) {
-         if (sequence[i].t === tile) {
-            match.push([sequence[i].x, sequence[i].y]);
-         } else if (match.length > 0) {
+            if (previewMatches.length) {
+                // commit changes
+                var temp = cell1.getTile();
+                this.getCell(cell1.col, cell1.row).setTile(cell2.getTile());
+                this.getCell(cell2.col, cell2.row).setTile(temp);
+            }
+        }
+    };
+
+    Grid.findAllMatches = function (grid) {
+        var matches = [];
+
+        for (var ty = 0; ty < Grid.size; ty++) {
+            for (var tx = 0; tx < Grid.size; tx++) {
+                matches.push(Grid.findMatches(tx, ty, grid));
+            }
+        }
+
+        return _.flatten(matches, true);
+    };
+
+    Grid.findMatches = function (tx, ty, grid) {
+        var matches = [], i;
+
+        // explore horizontal/vertical matches
+        var e = Grid.peek(tx, ty, Grid.size, 1, 0, grid);
+        var w = Grid.peek(tx, ty, Grid.size, -1, 0, grid);
+        var n = Grid.peek(tx, ty, Grid.size, 0, -1, grid);
+        var s = Grid.peek(tx, ty, Grid.size, 0, 1, grid);
+
+        var horizontal = Grid.getSequences(tx, ty, w, e, grid);
+        var vertical = Grid.getSequences(tx, ty, n, s, grid);
+
+        for (i = 0; i < horizontal.length; i++) {
+            matches.push(horizontal[i]);
+        }
+        for (i = 0; i < vertical.length; i++) {
+            matches.push(vertical[i]);
+        }
+
+        return matches;
+    };
+
+    Grid.peek = function (x, y, length, dx, dy, grid) {
+        var cells = [], tile, tx, ty;
+
+        for (var i = 1; i <= length; i++) {
+            tx = dx === 0 ? x : x + (i * dx);
+            ty = dy === 0 ? y : y + (i * dy);
+
+            if (ty >= 0 && ty < Grid.size && tx >= 0 && tx < Grid.size) {
+                tile = grid.getCell(tx, ty);
+                cells.push(tile);
+            }
+        }
+
+        return cells;
+    };
+
+    Grid.getSequences = function (cx, cy, left, right, grid) {
+        // horizontal sequence
+        var results = [], match, i, sequence = [];
+
+        for (i = left.length - 1; i >= 0; i--) {
+            sequence.push(left[i]);
+        }
+        sequence.push(grid.getCell(cx, cy));
+        for (i = 0; i < right.length; i++) {
+            sequence.push(right[i]);
+        }
+
+        // longest match sequence
+        match = [];
+        for (i = 0; i < sequence.length; i++) {
+            if (sequence[i].getTileId() === grid.getCell(cx, cy).getTileId()) {
+                match.push(sequence[i]);
+            } else if (match.length > 0) {
+                results.push(match);
+                match = [];
+            } else {
+                match = [];
+            }
+        }
+
+        if (match.length > 0) {
             results.push(match);
-            match = [];
-         } else {
-            match = [];
-         }
-      }
+        }
 
-      if (match.length > 0) {
-         results.push(match);
-      }
+        return results.filter(function (m) {
+            return m.length >= 3;
+        });
+    };
 
-      return results.filter(function(m) {
-         return m.length >= 3;
-      });
-   },
+    Grid.prototype.clone = function () {
+        var newGrid = new Grid();
 
-   peek: function (x, y, length, dx, dy) {
+        for (var i = 0; i < newGrid.cells.length; i++) {
+            newGrid.cells[i].setTile(this.cells[i].getTile());
+        }
 
-      var tiles = [], tile, tx, ty;
+        return newGrid;
+    };
+    Grid.size = 5;
+    return Grid;
+})(ex.Actor);
 
-      for (var i = 1; i <= length; i++) {
-         tx = dx === 0 ? x : x + (i * dx);
-         ty = dy === 0 ? y : y + (i * dy);
+var GridCell = (function (_super) {
+    __extends(GridCell, _super);
+    function GridCell(col, row) {
+        _super.call(this, 0, 0, GridCell.width, GridCell.width, ex.Color.fromHex("#dddddd"));
+        this.col = col;
+        this.row = row;
+        this.tile = null;
 
-         if (ty >= 0 && ty < board.length &&
-             tx >= 0 && tx < board[0].length) {
-            tile = { t: board[ty][tx], x: tx, y: ty };
-            tiles.push(tile);
-         }
-      }
+        this.anchor.setTo(0, 0);
+        this.x = col * GridCell.width + (col * GridCell.margin);
+        this.y = row * GridCell.width + (row * GridCell.margin);
 
-      return tiles;
-   },
+        this.label = new ex.Label(null, 0, 36, "36px Arial");
+        this.addChild(this.label);
+    }
+    GridCell.prototype.update = function (engine, delta) {
+        _super.prototype.update.call(this, engine, delta);
+    };
 
-   generateBoard: function () {
-      var i, j;
+    GridCell.prototype.isEmpty = function () {
+        return this.tile === null;
+    };
 
-      board = [];
+    GridCell.prototype.getTile = function () {
+        return this.tile;
+    };
 
-      // Fill blank
-      for (i = 0; i < config.size; i++) {
-         board.push([]);
+    GridCell.prototype.setTile = function (tile) {
+        this.tile = tile;
+        if (this.tile !== null) {
+            this.label.text = this.tile.tileId.toString();
+        }
+    };
 
-         for (j = 0; j < config.size; j++) {
-            board[i].push('');
-         }
-      }
+    GridCell.prototype.getTileId = function () {
+        if (!this.isEmpty()) {
+            return this.tile.tileId;
+        } else {
+            return -1;
+        }
+    };
 
-      // Fill
-      game.fill();
-   },
+    GridCell.prototype.isNeighboring = function (cell) {
+        var left = { x: this.col - 1, y: this.row }, right = { x: this.col + 1, y: this.row }, top = { x: this.col, y: this.row - 1 }, bottom = { x: this.col, y: this.row + 1 };
 
-   swap: function (x1, y1, x2, y2) {
+        return (left.x === cell.col && left.y === cell.row) || (right.x === cell.col && right.y === cell.row) || (top.x === cell.col && top.y === cell.row) || (bottom.x === cell.col && bottom.y === cell.row);
+    };
+    GridCell.width = 80;
+    GridCell.margin = 1;
+    return GridCell;
+})(ex.Actor);
+/// <reference path="tiles.ts"/>
+/// <reference path="grid.ts"/>
+ex.Logger.getInstance().defaultLevel = 0 /* Debug */;
 
-      var dfd = $.Deferred();
+var engine = new ex.Engine(720, 600);
+var board = new Grid();
 
-      if (game.isNeighboring(x1, y1, x2, y2)) {
+board.fill();
 
-         var that = board[y1][x1];
-         var other = board[y2][x2];
+engine.add(board);
 
-         // preview swap
-         board[y1][x1] = other;
-         board[y2][x2] = that;
-
-         var thatMatches = game.findMatches(that, x2, y2, board);
-         var otherMatches = game.findMatches(other, x1, y1, board);
-
-         if (thatMatches.length || otherMatches.length) {
-
-            ui.drawBoard();
-
-            // OK!
-            var matches = _.union(thatMatches, otherMatches);
-
-            return ui.animateDestroy(matches).then(function() {
-               _.forEach(matches, function (sequence) {
-
-                  _.forEach(sequence, function(coord) {
-                     board[coord[1]][coord[0]] = '';
-                  });                  
-
-               });
-            });
-
-         } else {
-
-            board[y1][x1] = that;
-            board[y2][x2] = other;
-
-            alert("Invalid move");
-
-            dfd.fail();
-         }
-      } else {
-         console.log(x1, y1, "and", x2, y2, "are not neighbors");
-
-         dfd.fail();
-      }
-
-      return dfd;
-   },
-
-   isNeighboring: function (x1, y1, x2, y2) {
-      var left = { x: x1 - 1, y: y1 },
-          right = { x: x1 + 1, y: y1 },
-          top = { x: x1, y: y1 - 1 },
-          bottom = { x: x1, y: y1 + 1 };
-
-      return (left.x === x2 && left.y === y2) ||
-          (right.x === x2 && right.y === y2) ||
-          (top.x === x2 && top.y === y2) ||
-          (bottom.x === x2 && bottom.y === y2);
-   }
-};
-
-var ui = {
-   initialized: false,
-
-   drawBoard: function () {
-      var i, j, $tile;
-
-      if (!ui.initialized) {
-         ui.initialized = true;
-
-         for (i = 0; i < board.length; i++) {
-            for (j = 0; j < board[i].length; j++) {
-               $tile = $("<div class='tile'></div>");
-               $tile.text(board[i][j]);
-               $tile.data("x", j);
-               $tile.data("y", i);
-               $board.append($tile);
-
-               if (j === 0) {
-                  $tile.css("clear", "left");
-               }
-            }
-         }
-
-         // tile click
-         $board.on('click', '.tile', ui.handleTileClick);         
-      } else {
-
-         $(".tile").each(function() {
-            var $this = $(this),
-               x = parseInt($this.data("x"), 10),
-               y = parseInt($this.data("y"), 10);
-
-            $this.text(board[y][x]);
-         });
-
-      }
-      
-   },
-
-   handleTileClick: function (e) {
-      var $this = $(this);
-
-      $this.toggleClass("active");
-
-      var $activeTiles = $(".tile.active");
-
-      if ($activeTiles.length === 2) {
-         $activeTiles.removeClass("active");
-
-         var x1 = parseInt($activeTiles.eq(0).data("x"), 10);
-         var y1 = parseInt($activeTiles.eq(0).data("y"), 10);
-         var x2 = parseInt($activeTiles.eq(1).data("x"), 10);
-         var y2 = parseInt($activeTiles.eq(1).data("y"), 10);
-
-         game.swap(x1, y1, x2, y2).then(function() {
-            ui.drawBoard();
-         });         
-      }
-   },
-
-   animateDestroy: function(matches) {
-
-      var dfd = $.Deferred();
-
-      _.forEach(matches, function (sequence) {
-         _.forEach(sequence, function(coord) {
-            $(".tile").each(function () {
-               var $this = $(this);
-
-               if ($this.data("x") == coord[0].toString() && $this.data("y") == coord[1].toString()) {
-                  $this.addClass("destroy");
-               }
-            });
-         });         
-      });
-
-      $(".tile.destroy").animate({ opacity: 0 }, 1500, 'swing', function() {
-         dfd.resolve();
-      });
-
-      return dfd;
-   }
-};
-
-game.generateBoard();
-
-ui.drawBoard();
+engine.start();
+//# sourceMappingURL=app.js.map
