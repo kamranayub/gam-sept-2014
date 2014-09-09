@@ -1,12 +1,12 @@
 ﻿class Grid extends ex.Actor {
    
    public static size: number = 5;
-   private static tileDropAnimationSpeed = 150;
-   private static tileDropAnimationSpeedFast = 500;
-   private static tileDropDelaySpeed = 50;
-   private static tileDisappearSpeed = 100;
-   private static tileShiftDelaySpeed = 250;
-   private static tileSwapSpeed = 300;
+   public static tileDropAnimationSpeed = 150;
+   public static tileDropAnimationSpeedFast = 500;
+   public static tileDropDelaySpeed = 50;
+   public static tileDisappearSpeed = 100;
+   public static tileShiftDelaySpeed = 250;
+   public static tileSwapSpeed = 300;
 
    private cells: GridCell[];
    private selectedCells: GridCell[];

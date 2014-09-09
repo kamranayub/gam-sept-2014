@@ -39,6 +39,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <TypeScriptCompile Include="config.ts" />
     <TypeScriptCompile Include="game.ts" />
     <TypeScriptCompile Include="grid.ts" />
     <TypeScriptCompile Include="Scripts\Excalibur.d.ts" />
