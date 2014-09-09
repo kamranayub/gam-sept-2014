@@ -5,6 +5,8 @@
    private static tileDropAnimationSpeedFast = 500;
    private static tileDropDelaySpeed = 50;
    private static tileDisappearSpeed = 100;
+   private static tileShiftDelaySpeed = 250;
+   private static tileSwapSpeed = 300;
 
    private cells: GridCell[];
    private selectedCells: GridCell[];
@@ -160,35 +162,34 @@
             // swap            
             cell1.swapTile(cell2).then(() => {
                // resolve matches
-               var totalMatches = 0;
-               var matchLength;
-               var chainLength = -1;
 
-               while ((matchLength = this.resolveMatches()) > 0) {
-                  // total matches
-                  totalMatches += matchLength;
-
-                  // chain
-                  chainLength++;
-
-                  ex.Logger.getInstance().info("Match chain", chainLength);
-
-                  // shift all empty cells down
-                  // start from bottom row and move up
-                  this.shiftColumns();
-
-                  // fill in empty spots
-                  this.fill();
-               }
-
-               ex.Logger.getInstance().info("Finished swap with", totalMatches, "total matches and a", chainLength, "chain length");
+               this.resolveMatches(new Chain()).then(this.beginChain.bind(this)).then((chain: Chain) => {
+                  ex.Logger.getInstance().info("Finished chain with", chain.totalMatches, "total matches and a", chain.chain, "chain length");
+               });
+               
             });            
          }
       }
 
    }
 
-   private resolveMatches(): number {
+   private beginChain(chain: Chain): ex.Promise<Chain> {
+      ex.Logger.getInstance().info("Match chain", chain.chain);
+
+      chain.chain++;
+
+      // shift all empty cells down
+      // start from bottom row and move up
+      return this.shiftColumns(chain).then(this.fill.bind(this)).then(this.resolveMatches.bind(this)).then((c2) => {
+         if (c2.lastMatches > 0) {
+            return this.beginChain(chain);
+         } else {
+            return ex.Promise.wrap(chain);
+         }
+      });
+   }
+
+   private resolveMatches(chain: Chain): ex.Promise<Chain> {
 
       var matches = Grid.findAllMatches(this);
 
@@ -204,22 +205,26 @@
 
       });
 
-      return matches.length;
+      chain.totalMatches += matches.length;
+      chain.lastMatches = matches.length;
+
+      return ex.Promise.wrap(chain);
    }
 
-   private shiftColumns(): void {
+   private shiftColumns(chain: Chain): ex.Promise<Chain> {
       var row, col, peekRow;
+      var tilesToShift = [];
+      var p = new ex.Promise();
       for (row = Grid.size - 1; row > 0; row--) {
          for (col = 0; col < Grid.size; col++) {
 
-            if (this.getCell(col, row).isEmpty()) {
+            if (this.getCell(col, row).isEmpty() || tilesToShift.filter((x) => x.from[0] === col && x.from[1] === row).length > 0) {
 
                // shift the first tile above this row
                peekRow = row - 1;
                while (peekRow > -1) {
-                  if (!this.getCell(col, peekRow).isEmpty()) {
-                     this.getCell(col, row).setTile(this.getCell(col, peekRow).getTile());
-                     this.getCell(col, peekRow).setTile(null);
+                  if (!this.getCell(col, peekRow).isEmpty() && tilesToShift.filter((x) => x.from[0] === col && x.from[1] === peekRow).length === 0) {
+                     tilesToShift.push({ from: [col, peekRow], to: [col, row] });                     
                      peekRow = -1;
                   } else {
                      peekRow--;
@@ -229,6 +234,37 @@
 
          }
       }
+
+      ex.Logger.getInstance().info("Shifting", tilesToShift.length, "tiles downward");
+
+      var pair, from, to, q = _.clone(tilesToShift), complete = [];
+      var c = () => {
+         complete.push(q.shift());
+
+         if (q.length === 0) {
+            complete.forEach(pair2 => {
+               this.getCell(pair2.to[0], pair2.to[1]).setTile(this.getCell(pair2.from[0], pair2.from[1]).getTile());
+               this.getCell(pair2.from[0], pair2.from[1]).setTile(null);
+            });
+            p.resolve(chain);
+         }
+      }
+
+      if (tilesToShift.length === 0) {
+         p.resolve(chain);
+      } else {
+         while (tilesToShift.length > 0) {
+            pair = tilesToShift.shift();
+
+            ex.Logger.getInstance().info("Shifting", pair, "downward");
+
+            from = this.getCell(pair.from[0], pair.from[1]);
+            to = this.getCell(pair.to[0], pair.to[1]);
+
+            from.getTile().delay(Grid.tileShiftDelaySpeed).moveTo(to.x, to.y, Grid.tileDropAnimationSpeedFast).callMethod(c);
+         }
+      }
+      return p;
    }
 
    public static findAllMatches(grid: Grid): GridCell[][] {
@@ -409,8 +445,8 @@ class GridCell extends ex.Actor {
             p.resolve(true);
          }
       }
-      otherTile.moveTo(this.x, this.y, 150).callMethod(c);
-      thisTile.moveTo(other.x, other.y, 150).callMethod(c);           
+      otherTile.moveTo(this.x, this.y, Grid.tileSwapSpeed).callMethod(c);
+      thisTile.moveTo(other.x, other.y, Grid.tileSwapSpeed).callMethod(c);           
 
       return p;
    }
@@ -435,4 +471,10 @@ class GridCell extends ex.Actor {
          (top.x === cell.col && top.y === cell.row) ||
          (bottom.x === cell.col && bottom.y === cell.row);
    }
+}
+
+class Chain {
+   public totalMatches: number = 0;
+   public chain: number = 0;
+   public lastMatches: number = 0;
 }

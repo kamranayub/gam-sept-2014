@@ -1,4 +1,9 @@
-﻿var __extends = this.__extends || function (d, b) {
+﻿var Config = (function () {
+    function Config() {
+    }
+    return Config;
+})();
+var __extends = this.__extends || function (d, b) {
     for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
     function __() { this.constructor = d; }
     __.prototype = b.prototype;
@@ -232,34 +237,32 @@ var Grid = (function (_super) {
                 // swap
                 cell1.swapTile(cell2).then(function () {
                     // resolve matches
-                    var totalMatches = 0;
-                    var matchLength;
-                    var chainLength = -1;
-
-                    while ((matchLength = _this.resolveMatches()) > 0) {
-                        // total matches
-                        totalMatches += matchLength;
-
-                        // chain
-                        chainLength++;
-
-                        ex.Logger.getInstance().info("Match chain", chainLength);
-
-                        // shift all empty cells down
-                        // start from bottom row and move up
-                        _this.shiftColumns();
-
-                        // fill in empty spots
-                        _this.fill();
-                    }
-
-                    ex.Logger.getInstance().info("Finished swap with", totalMatches, "total matches and a", chainLength, "chain length");
+                    _this.resolveMatches(new Chain()).then(_this.beginChain.bind(_this)).then(function (chain) {
+                        ex.Logger.getInstance().info("Finished chain with", chain.totalMatches, "total matches and a", chain.chain, "chain length");
+                    });
                 });
             }
         }
     };
 
-    Grid.prototype.resolveMatches = function () {
+    Grid.prototype.beginChain = function (chain) {
+        var _this = this;
+        ex.Logger.getInstance().info("Match chain", chain.chain);
+
+        chain.chain++;
+
+        // shift all empty cells down
+        // start from bottom row and move up
+        return this.shiftColumns(chain).then(this.fill.bind(this)).then(this.resolveMatches.bind(this)).then(function (c2) {
+            if (c2.lastMatches > 0) {
+                return _this.beginChain(chain);
+            } else {
+                return ex.Promise.wrap(chain);
+            }
+        });
+    };
+
+    Grid.prototype.resolveMatches = function (chain) {
         var _this = this;
         var matches = Grid.findAllMatches(this);
 
@@ -271,20 +274,29 @@ var Grid = (function (_super) {
             });
         });
 
-        return matches.length;
+        chain.totalMatches += matches.length;
+        chain.lastMatches = matches.length;
+
+        return ex.Promise.wrap(chain);
     };
 
-    Grid.prototype.shiftColumns = function () {
+    Grid.prototype.shiftColumns = function (chain) {
+        var _this = this;
         var row, col, peekRow;
+        var tilesToShift = [];
+        var p = new ex.Promise();
         for (row = Grid.size - 1; row > 0; row--) {
             for (col = 0; col < Grid.size; col++) {
-                if (this.getCell(col, row).isEmpty()) {
+                if (this.getCell(col, row).isEmpty() || tilesToShift.filter(function (x) {
+                    return x.from[0] === col && x.from[1] === row;
+                }).length > 0) {
                     // shift the first tile above this row
                     peekRow = row - 1;
                     while (peekRow > -1) {
-                        if (!this.getCell(col, peekRow).isEmpty()) {
-                            this.getCell(col, row).setTile(this.getCell(col, peekRow).getTile());
-                            this.getCell(col, peekRow).setTile(null);
+                        if (!this.getCell(col, peekRow).isEmpty() && tilesToShift.filter(function (x) {
+                            return x.from[0] === col && x.from[1] === peekRow;
+                        }).length === 0) {
+                            tilesToShift.push({ from: [col, peekRow], to: [col, row] });
                             peekRow = -1;
                         } else {
                             peekRow--;
@@ -293,6 +305,37 @@ var Grid = (function (_super) {
                 }
             }
         }
+
+        ex.Logger.getInstance().info("Shifting", tilesToShift.length, "tiles downward");
+
+        var pair, from, to, q = _.clone(tilesToShift), complete = [];
+        var c = function () {
+            complete.push(q.shift());
+
+            if (q.length === 0) {
+                complete.forEach(function (pair2) {
+                    _this.getCell(pair2.to[0], pair2.to[1]).setTile(_this.getCell(pair2.from[0], pair2.from[1]).getTile());
+                    _this.getCell(pair2.from[0], pair2.from[1]).setTile(null);
+                });
+                p.resolve(chain);
+            }
+        };
+
+        if (tilesToShift.length === 0) {
+            p.resolve(chain);
+        } else {
+            while (tilesToShift.length > 0) {
+                pair = tilesToShift.shift();
+
+                ex.Logger.getInstance().info("Shifting", pair, "downward");
+
+                from = this.getCell(pair.from[0], pair.from[1]);
+                to = this.getCell(pair.to[0], pair.to[1]);
+
+                from.getTile().delay(Grid.tileShiftDelaySpeed).moveTo(to.x, to.y, Grid.tileDropAnimationSpeedFast).callMethod(c);
+            }
+        }
+        return p;
     };
 
     Grid.findAllMatches = function (grid) {
@@ -397,6 +440,8 @@ var Grid = (function (_super) {
     Grid.tileDropAnimationSpeedFast = 500;
     Grid.tileDropDelaySpeed = 50;
     Grid.tileDisappearSpeed = 100;
+    Grid.tileShiftDelaySpeed = 250;
+    Grid.tileSwapSpeed = 300;
     return Grid;
 })(ex.Actor);
 
@@ -470,8 +515,8 @@ var GridCell = (function (_super) {
                 p.resolve(true);
             }
         };
-        otherTile.moveTo(this.x, this.y, 150).callMethod(c);
-        thisTile.moveTo(other.x, other.y, 150).callMethod(c);
+        otherTile.moveTo(this.x, this.y, Grid.tileSwapSpeed).callMethod(c);
+        thisTile.moveTo(other.x, other.y, Grid.tileSwapSpeed).callMethod(c);
 
         return p;
     };
@@ -493,6 +538,15 @@ var GridCell = (function (_super) {
     GridCell.margin = 1;
     return GridCell;
 })(ex.Actor);
+
+var Chain = (function () {
+    function Chain() {
+        this.totalMatches = 0;
+        this.chain = 0;
+        this.lastMatches = 0;
+    }
+    return Chain;
+})();
 /// <reference path="tiles.ts"/>
 /// <reference path="grid.ts"/>
 ex.Logger.getInstance().defaultLevel = 0 /* Debug */;
